@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+data/*.log
+logs/
+
+# Secure files
+.env
+secret*
+*.key
+*.pem
+
+# Data (optional, but requested to ignore logs - typically scrape data is also ignored if large)
+# Un-comment the next line if you want to ignore all data files
+# data/listings/
+# data/history/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="fi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oikotie House Tracker - Herttoniemi</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <style>
+        .stat-card {
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card.active {
+            border: 2px solid #667eea;
+            background-color: rgba(102, 126, 234, 0.05);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loader-content">
+            <div class="spinner"></div>
+            <p>Refreshing data from Oikotie...</p>
+            <p class="loader-subtext">This might take a minute as we visit each listing.</p>
+        </div>
+    </div>
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <div class="brand">
+                    <span class="icon">🏠</span>
+                    <h1 class="title">Oikotie House Tracker</h1>
+                </div>
+                <div class="separator">|</div>
+                <span class="subtitle">Herttoniemi Area • 4+ Rooms</span>
+                <div class="separator">|</div>
+                {% if last_update %}
+                <span class="last-updated">Updated: <span id="last-update-time">{{ last_update | datetimeformat
+                        }}</span></span>
+                {% else %}
+                <span class="last-updated">Updated: Never</span>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <!-- Left Sidebar Filter Panel -->
+
+            <div class="main-content">
+                <div class="listings-section">
+                    <div class="view-header">
+                        <div class="section-header-left">
+                            <h2 class="section-title">All Listings</h2>
+                            <div class="filter-summary" id="filter-summary">
+                                <span class="result-count" id="result-count">{{ stats.total }} listings</span>
+                                <div class="active-filters" id="active-filters"></div>
+                            </div>
+                        </div>
+                        <div class="view-toggle">
+                            <button class="toggle-btn" id="filter-view-btn" onclick="toggleFilters()">
+                                <span>🔍</span> Filters
+                            </button>
+                            <button class="toggle-btn active" id="list-view-btn" onclick="switchView('list')">
+                                <span>📋</span> List
+                            </button>
+                            <button class="toggle-btn" id="map-view-btn" onclick="switchView('map')">
+                                <span>🗺️</span> Map
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filter Panel -->
+                    <div class="filter-panel" id="filter-panel" style="display: none;">
+                        <div class="sidebar-header">
+                            <button class="refresh-btn" onclick="handleRefresh()">
+                                <span class="refresh-icon">↻</span>
+                                Refresh Data
+                            </button>
+                        </div>
+                        <div class="filter-panel-header">
+                            <h3>Filter Options</h3>
+                            <button class="clear-filters-btn" onclick="clearAllFilters()">Clear All</button>
+                        </div>
+
+                        <!-- Status Filters -->
+                        <div class="filter-section">
+                            <h4 class="filter-section-title">Status</h4>
+                            <div class="filter-options">
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-new" onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">New This Week</span>
+                                </label>
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-price-drop" onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Price Drops</span>
+                                </label>
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-open-house" onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Open Houses</span>
+                                </label>
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-sold" onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Sold</span>
+                                </label>
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-visited" onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Visited</span>
+                                </label>
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-favorites" onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Favorites</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Location Filters -->
+                        <div class="filter-section">
+                            <h4 class="filter-section-title">Location</h4>
+                            <div class="filter-options">
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-herttoniemi" checked onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Herttoniemi</span>
+                                </label>
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-herttoniemenranta" checked
+                                        onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Herttoniemenranta</span>
+                                </label>
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-kulosaari" checked onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Kulosaari</span>
+                                </label>
+                            </div>
+                        </div>
+
+
+
+                        <!-- Other Filters -->
+                        <div class="filter-section">
+                            <h4 class="filter-section-title">Other</h4>
+                            <div class="filter-options">
+                                <label class="filter-toggle">
+                                    <input type="checkbox" id="filter-separate-toilet" onchange="applyFilters()">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label">Separate Toilet</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="map-container">
+                        <div id="map"></div>
+                    </div>
+
+                    {% if listings %}
+                    <div class="listings-grid">
+                        {% for listing in listings %}
+                        <div class="listing-card {{ 'visited' if listing.visited else '' }}" data-id="{{ listing.id }}"
+                            data-new="{{ 'true' if (listing.timestamp > (now - 604800)) else 'false' }}"
+                            data-price-drop="{{ 'true' if listing.price_drop else 'false' }}"
+                            data-open-house="{{ 'true' if listing.open_house else 'false' }}"
+                            data-visited="{{ 'true' if listing.visited else 'false' }}">
+                            <div class="listing-actions">
+                                <button class="action-btn btn-visited {{ 'active' if listing.visited else '' }}"
+                                    onclick="event.stopPropagation(); toggleVisited('{{ listing.id }}')"
+                                    title="{{ 'Mark as not visited' if listing.visited else 'Mark as visited' }}">
+                                    {{ '👁️' if listing.visited else '👁️‍🗨️' }}
+                                </button>
+                                <button class="action-btn btn-remove"
+                                    onclick="event.stopPropagation(); removeListing('{{ listing.id }}')"
+                                    title="Remove from list">
+                                    🗑️
+                                </button>
+                                <button class="action-btn btn-favorite {{ 'active' if listing.favorite else '' }}"
+                                    onclick="event.stopPropagation(); toggleFavorite('{{ listing.id }}')"
+                                    title="{{ 'Remove from favorites' if listing.favorite else 'Add to favorites' }}">
+                                    {{ '❤️' if listing.favorite else '🤍' }}
+                                </button>
+                            </div>
+                            <div class="listing-image">
+                                {% if listing.image %}
+                                <img src="{{ listing.image }}" alt="{{ listing.address }}"
+                                    onerror="this.src='https://via.placeholder.com/400x300/667eea/ffffff?text=No+Image'">
+                                {% else %}
+                                <div class="placeholder-image">
+                                    <span>🏡</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="listing-content">
+                                <h3 class="listing-address">{{ listing.address }}</h3>
+                                <div class="listing-details">
+                                    <span class="listing-size">{{ listing.size }}</span>
+                                    <div class="price-badges">
+                                        {% if listing.price_per_sqm and listing.price_per_sqm != 'N/A' %}
+                                        <span class="badge badge-sqm">{{ listing.price_per_sqm }}</span>
+                                        {% endif %}
+                                        {% if listing.maintenance_fee and listing.maintenance_fee != 'N/A' %}
+                                        <span class="badge badge-maintenance">{{ listing.maintenance_fee }}</span>
+                                        {% endif %}
+                                        {% if listing.open_house %}
+                                        <span class="badge badge-open-house">{{ listing.open_house }}</span>
+                                        {% endif %}
+                                        {% if listing.sold %}
+                                        <span class="badge badge-sold">SOLD</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="listing-footer">
+                                    <div class="listing-price">{{ listing.price }}</div>
+                                    {% if listing.sold %}
+                                    <span class="footer-sold-badge">SOLD</span>
+                                    {% endif %}
+                                    <a href="{{ listing.url }}" target="_blank" class="view-btn">View →</a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div id="empty-filter-state" class="empty-state" style="display: none; padding: 40px;">
+                        <div class="empty-icon">🔍</div>
+                        <h3>No <span id="filter-name-display">listings</span> found</h3>
+                        <p>Try selecting a different filter or refresh the data.</p>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <h3>No listings yet</h3>
+                        <p>Click "Refresh Data" to fetch the latest listings from Oikotie</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <script>
+                function handleRefresh() {
+                    const overlay = document.getElementById('loading-overlay');
+                    const btn = document.getElementById('refresh-btn');
+
+                    overlay.style.display = 'flex';
+                    btn.disabled = true;
+                    btn.style.opacity = '0.5';
+                    btn.style.cursor = 'not-allowed';
+
+                    window.location.href = '/refresh';
+                }
+
+                // Convert timestamp to readable format if JS is enabled
+                document.addEventListener('DOMContentLoaded', function () {
+                    const timeSpan = document.getElementById('last-update-time');
+                    if (timeSpan && !isNaN(timeSpan.innerText)) {
+                        const date = new Date(parseFloat(timeSpan.innerText) * 1000);
+                        timeSpan.innerText = date.toLocaleString();
+                    }
+                });
+
+                async function toggleVisited(lid) {
+                    const card = document.querySelector(`.listing-card[data-id="${lid}"]`);
+                    const btn = card.querySelector('.btn-visited');
+                    const isCurrentlyVisited = card.dataset.visited === 'true';
+                    const newValue = !isCurrentlyVisited;
+
+                    try {
+                        const response = await fetch(`/visited/${lid}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ visited: newValue })
+                        });
+                        const result = await response.json();
+
+                        if (result.success) {
+                            card.dataset.visited = newValue ? 'true' : 'false';
+                            if (newValue) {
+                                card.classList.add('visited');
+                                btn.classList.add('active');
+                                btn.innerText = '👁️';
+                                btn.title = 'Mark as not visited';
+                            } else {
+                                card.classList.remove('visited');
+                                btn.classList.remove('active');
+                                btn.innerText = '👁️‍🗨️';
+                                btn.title = 'Mark as visited';
+                            }
+
+                            // Update the global listings object for the map
+                            const listing = listings.find(l => l.id === lid);
+                            if (listing) listing.visited = newValue;
+
+                            // Re-apply filters after visiting
+                            applyFilters();
+
+                            // Update stats if needed (would require a reload or a separate stats fetch)
+                            // For now, we just update the UI locally
+                        }
+                    } catch (error) {
+                        console.error('Error toggling visited:', error);
+                    }
+                }
+
+                async function toggleFavorite(lid) {
+                    const card = document.querySelector(`.listing-card[data-id="${lid}"]`);
+                    const btn = card.querySelector('.btn-favorite');
+                    const isCurrentlyFavorite = btn.classList.contains('active');
+                    const newValue = !isCurrentlyFavorite;
+
+                    try {
+                        const response = await fetch(`/favorite/${lid}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ favorite: newValue })
+                        });
+                        const result = await response.json();
+
+                        if (result.success) {
+                            if (newValue) {
+                                btn.classList.add('active');
+                                btn.innerText = '❤️';
+                                btn.title = 'Remove from favorites';
+                                card.dataset.favorite = 'true';
+                            } else {
+                                btn.classList.remove('active');
+                                btn.innerText = '🤍';
+                                btn.title = 'Add to favorites';
+                                card.dataset.favorite = 'false';
+                            }
+
+                            // Update global listings object if needed
+                            const listing = listings.find(l => l.id === lid);
+                            if (listing) listing.favorite = newValue;
+                        }
+                    } catch (error) {
+                        console.error('Error toggling favorite:', error);
+                    }
+                }
+
+                async function removeListing(lid) {
+                    if (!confirm('Are you sure you want to remove this house? It will be hidden from all views.')) return;
+
+                    const card = document.querySelector(`.listing-card[data-id=\"${lid}\"]`);
+
+                    try {
+                        const response = await fetch(`/remove/${lid}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        const result = await response.json();
+
+                        if (result.success) {
+                            card.classList.add('removed');
+
+                            // Update global listings
+                            const index = listings.findIndex(l => l.id === lid);
+                            if (index !== -1) listings[index].removed = true;
+
+                            // Re-apply filters to update counts/empty state
+                            applyFilters();
+                        }
+                    } catch (error) {
+                        console.error('Error removing listing:', error);
+                    }
+                }
+
+                // Map Logic
+                const listings = {{ listings | tojson }};
+                const serverNow = {{ now }};
+                let map = null;
+                let markers = [];
+
+                // Filter Panel Toggle
+                function toggleFilters() {
+                    const panel = document.getElementById('filter-panel');
+                    const btn = document.getElementById('filter-view-btn');
+
+                    if (panel.style.display === 'none') {
+                        panel.style.display = 'block';
+                        btn.classList.add('active');
+                    } else {
+                        panel.style.display = 'none';
+                        btn.classList.remove('active');
+                    }
+                }
+
+                // Clear All Filters
+                function clearAllFilters() {
+                    // Clear all checkboxes
+                    document.querySelectorAll('.filter-panel input[type="checkbox"]').forEach(cb => cb.checked = false);
+
+                    // Clear all number inputs
+                    document.querySelectorAll('.filter-panel input[type="number"]').forEach(input => input.value = '');
+
+                    // Apply filters (which will show all)
+                    applyFilters();
+                }
+
+                // Helper function to parse price strings
+                function parsePrice(priceStr) {
+                    if (!priceStr || priceStr === 'N/A') return 0;
+                    return parseFloat(priceStr.replace(/[€\s]/g, '').replace(',', '.'));
+                }
+
+                // Main filter application function
+                function applyFilters() {
+                    const weekSeconds = 7 * 24 * 60 * 60;
+
+                    // Get filter states
+                    const filters = {
+                        // Status filters
+                        newThisWeek: document.getElementById('filter-new')?.checked || false,
+                        priceDrop: document.getElementById('filter-price-drop')?.checked || false,
+                        openHouse: document.getElementById('filter-open-house')?.checked || false,
+                        sold: document.getElementById('filter-sold')?.checked || false,
+                        visited: document.getElementById('filter-visited')?.checked || false,
+                        favorites: document.getElementById('filter-favorites')?.checked || false,
+
+                        // Location filters
+                        herttoniemi: document.getElementById('filter-herttoniemi')?.checked || false,
+                        herttoniemenranta: document.getElementById('filter-herttoniemenranta')?.checked || false,
+                        kulosaari: document.getElementById('filter-kulosaari')?.checked || false,
+
+                        // Other filters
+                        separateToilet: document.getElementById('filter-separate-toilet')?.checked || false
+                    };
+
+                    // Check if any filters are active
+                    const hasActiveFilters = Object.entries(filters).some(([key, value]) => {
+                        if (typeof value === 'boolean') return value;
+                        return value !== null;
+                    });
+
+                    // Filter listings
+                    const cards = document.querySelectorAll('.listing-card');
+                    let visibleCount = 0;
+                    const activeFilterLabels = [];
+
+                    cards.forEach(card => {
+                        if (card.classList.contains('removed')) {
+                            card.style.display = 'none';
+                            return;
+                        }
+
+                        const listing = listings.find(l => l.id === card.dataset.id);
+                        if (!listing) {
+                            card.style.display = 'none';
+                            return;
+                        }
+
+                        let show = true;
+
+                        // Hide sold listings by default unless explicitly requested
+                        if (listing.sold && !filters.sold) show = false;
+
+                        // Status filters (OR logic within status filters)
+                        if (filters.newThisWeek || filters.priceDrop || filters.openHouse || filters.sold || filters.visited || filters.favorites) {
+                            let statusMatch = false;
+
+                            if (filters.newThisWeek && (serverNow - listing.timestamp) < weekSeconds) statusMatch = true;
+                            if (filters.priceDrop && listing.price_drop) statusMatch = true;
+                            if (filters.openHouse && listing.open_house && !listing.visited) statusMatch = true;
+                            if (filters.sold && listing.sold) statusMatch = true;
+                            if (filters.visited && listing.visited) statusMatch = true;
+                            if (filters.favorites && listing.favorite) statusMatch = true;
+
+                            if (!statusMatch) show = false;
+                        }
+
+                        // Location filters (OR logic within location filters)
+                        if (show && (filters.herttoniemi || filters.herttoniemenranta || filters.kulosaari)) {
+                            const address = (listing.address || '').toLowerCase();
+                            let locationMatch = false;
+
+                            if (filters.herttoniemi && address.includes('herttoniemi') && !address.includes('herttoniemenranta')) locationMatch = true;
+                            if (filters.herttoniemenranta && address.includes('herttoniemenranta')) locationMatch = true;
+                            if (filters.kulosaari && address.includes('kulosaari')) locationMatch = true;
+
+                            if (!locationMatch) show = false;
+                        }
+
+
+
+                        // Separate toilet filter
+                        if (show && filters.separateToilet) {
+                            const toilets = listing.toilets || 'N/A';
+                            if (toilets === 'N/A' || toilets === '0' || toilets === '') show = false;
+                        }
+
+                        card.style.display = show ? 'flex' : 'none';
+                        if (show) visibleCount++;
+                    });
+
+                    // Build active filter labels
+                    if (filters.newThisWeek) activeFilterLabels.push('New This Week');
+                    if (filters.priceDrop) activeFilterLabels.push('Price Drops');
+                    if (filters.openHouse) activeFilterLabels.push('Open Houses');
+                    if (filters.sold) activeFilterLabels.push('Sold');
+                    if (filters.visited) activeFilterLabels.push('Visited');
+                    if (filters.favorites) activeFilterLabels.push('Favorites');
+                    if (filters.herttoniemi) activeFilterLabels.push('Herttoniemi');
+                    if (filters.herttoniemenranta) activeFilterLabels.push('Herttoniemenranta');
+                    if (filters.kulosaari) activeFilterLabels.push('Kulosaari');
+                    if (filters.separateToilet) activeFilterLabels.push('Separate Toilet');
+
+                    // Update result count
+                    const resultCount = document.getElementById('result-count');
+                    if (resultCount) {
+                        resultCount.textContent = `${visibleCount} listing${visibleCount !== 1 ? 's' : ''}`;
+                    }
+
+                    // Update active filters display
+                    const activeFiltersContainer = document.getElementById('active-filters');
+                    if (activeFiltersContainer) {
+                        if (activeFilterLabels.length > 0) {
+                            activeFiltersContainer.innerHTML = activeFilterLabels.map(label =>
+                                `<span class="filter-badge">${label}</span>`
+                            ).join('');
+                        } else {
+                            activeFiltersContainer.innerHTML = '';
+                        }
+                    }
+
+                    // Update section title
+                    const titleElem = document.querySelector('.section-title');
+                    if (titleElem) {
+                        titleElem.textContent = hasActiveFilters ? 'Filtered Listings' : 'All Listings';
+                    }
+
+                    // Update empty state
+                    const emptyFilterState = document.getElementById('empty-filter-state');
+                    if (emptyFilterState) {
+                        const isMapVisible = document.getElementById('map-view-btn')?.classList.contains('active');
+                        if (visibleCount === 0 && listings.length > 0 && !isMapVisible) {
+                            emptyFilterState.style.display = 'block';
+                            document.getElementById('filter-name-display').innerText = 'listings matching your filters';
+                        } else {
+                            emptyFilterState.style.display = 'none';
+                        }
+                    }
+
+                    // Update map markers
+                    updateMapMarkers(filters);
+                }
+
+                function switchView(view) {
+                    const listView = document.querySelector('.listings-grid');
+                    const emptyState = document.querySelector('.empty-state');
+                    const mapContainer = document.getElementById('map-container');
+                    const listBtn = document.getElementById('list-view-btn');
+                    const mapBtn = document.getElementById('map-view-btn');
+
+                    if (view === 'list') {
+                        if (listView) listView.style.display = 'grid';
+                        if (emptyState) emptyState.style.display = 'block';
+                        mapContainer.style.display = 'none';
+                        listBtn.classList.add('active');
+                        mapBtn.classList.remove('active');
+
+                        // Re-apply filters to list items
+                        applyFilters();
+                    } else {
+                        if (listView) listView.style.display = 'none';
+                        if (emptyState) emptyState.style.display = 'none';
+                        mapContainer.style.display = 'block';
+                        listBtn.classList.remove('active');
+                        mapBtn.classList.add('active');
+
+                        if (!map) {
+                            initMap();
+                        } else {
+                            // Leaflet needs invalidateSize when shown from hidden
+                            setTimeout(() => {
+                                map.invalidateSize();
+                                applyFilters(); // This will update map markers
+                            }, 100);
+                        }
+                    }
+                }
+
+                function initMap() {
+                    // Initial map setup (placeholder view, will be fitted shortly)
+                    map = L.map('map').setView([60.194, 25.034], 13);
+
+                    // Using CartoDB Dark Matter for a premium feel
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+                    }).addTo(map);
+
+                    // Add area highlight polygons for filtered neighborhoods
+                    addAreaPolygons();
+
+                    applyFilters(); // This will update markers
+                }
+
+                function addAreaPolygons() {
+                    if (!map) return;
+
+                    // Define approximate boundaries for the three neighborhoods
+                    // These are simplified polygons based on the general area boundaries
+
+                    // Herttoniemi (using Länsi-Herttoniemi boundaries)
+                    const herttoniemiCoords = [[60.2048997770462, 25.0068041549093], [60.2189262008679, 25.0422677418211], [60.2180730238398, 25.0437233639389], [60.2126900950632, 25.0451695964188], [60.2084899758418, 25.0486181128225], [60.2080697664964, 25.0505384265257], [60.2079103499034, 25.0516229240441], [60.2077987795097, 25.0528245217078], [60.2077646051002, 25.0535535857291], [60.2072216918285, 25.0509351783053], [60.2037811059793, 25.043645734156], [60.2002746803121, 25.039034212623], [60.1961288067835, 25.0342292953302], [60.1932821432908, 25.0297518407424], [60.1907955443191, 25.0201525116315], [60.2045972301793, 25.0077049823469]];
+
+                    // Herttoniemenranta
+                    const herttoniemenrantaCoords = [[60.190019366419, 25.0178511875499], [60.1907955532945, 25.020152511637], [60.1924634278109, 25.0253745833756], [60.1929111869764, 25.027606236469], [60.1934000062093, 25.0304336445591], [60.1942719429203, 25.032096507242], [60.1937299119608, 25.0342385871171], [60.1930605761197, 25.0369288955318], [60.1926433075176, 25.0386058664358], [60.1925529875606, 25.040119240035], [60.1926577066398, 25.0423609061106], [60.1927287302135, 25.0438756120295], [60.1916350351975, 25.0448578030717], [60.1901136046014, 25.0460612068888], [60.1898918627892, 25.0465872304554], [60.1898419058693, 25.0470695042753], [60.1887139910559, 25.0556478699926], [60.1830772352844, 25.0220104922185], [60.1899254799051, 25.0180773535939]];
+
+                    // Kulosaari
+                    const kulosaariCoords = [[60.1863470659779, 24.9874677825024], [60.1915628264476, 24.9920634892559], [60.1982668228039, 24.9979728693658], [60.2045972301793, 25.0077049823469], [60.1976702684911, 25.0215582932401], [60.1904098824885, 25.0166401144732], [60.1899254799051, 25.0180773535939], [60.1885369160173, 25.0228225491713], [60.1826285201662, 25.0219437682208], [60.1785999537764, 25.019602237785], [60.177707465492, 25.0159810015385], [60.1808297066356, 25.0037124702501], [60.1830563487967, 24.996683330036], [60.1846987991307, 24.9915006977672], [60.1860558430971, 24.9872114524528]];
+
+
+                    // Style configuration for polygons
+                    const polygonStyle = {
+                        fillOpacity: 0.15,
+                        weight: 2,
+                        opacity: 0.6
+                    };
+
+                    // Create and add Herttoniemi polygon
+                    const herttoniemiPolygon = L.polygon(herttoniemiCoords, {
+                        ...polygonStyle,
+                        color: '#667eea',
+                        fillColor: '#667eea'
+                    }).addTo(map);
+                    herttoniemiPolygon.bindTooltip('Herttoniemi', {
+                        permanent: false,
+                        direction: 'center',
+                        className: 'area-tooltip'
+                    });
+
+                    // Create and add Herttoniemenranta polygon
+                    const herttoniemenrantaPolygon = L.polygon(herttoniemenrantaCoords, {
+                        ...polygonStyle,
+                        color: '#10b981',
+                        fillColor: '#10b981'
+                    }).addTo(map);
+                    herttoniemenrantaPolygon.bindTooltip('Herttoniemenranta', {
+                        permanent: false,
+                        direction: 'center',
+                        className: 'area-tooltip'
+                    });
+
+                    // Create and add Kulosaari polygon
+                    const kulosaariPolygon = L.polygon(kulosaariCoords, {
+                        ...polygonStyle,
+                        color: '#f59e0b',
+                        fillColor: '#f59e0b'
+                    }).addTo(map);
+                    kulosaariPolygon.bindTooltip('Kulosaari', {
+                        permanent: false,
+                        direction: 'center',
+                        className: 'area-tooltip'
+                    });
+                }
+
+                function updateMapMarkers(filters) {
+                    if (!map) return;
+
+                    // Clear existing markers
+                    markers.forEach(marker => map.removeLayer(marker));
+                    markers = [];
+
+                    const seenCoords = {};
+                    const weekSeconds = 7 * 24 * 60 * 60;
+
+                    // If no filters provided, get current filter state
+                    if (!filters) {
+                        filters = {
+                            newThisWeek: document.getElementById('filter-new')?.checked || false,
+                            priceDrop: document.getElementById('filter-price-drop')?.checked || false,
+                            openHouse: document.getElementById('filter-open-house')?.checked || false,
+                            sold: document.getElementById('filter-sold')?.checked || false,
+                            visited: document.getElementById('filter-visited')?.checked || false,
+                            favorites: document.getElementById('filter-favorites')?.checked || false,
+                            herttoniemi: document.getElementById('filter-herttoniemi')?.checked || false,
+                            herttoniemenranta: document.getElementById('filter-herttoniemenranta')?.checked || false,
+                            kulosaari: document.getElementById('filter-kulosaari')?.checked || false,
+                            separateToilet: document.getElementById('filter-separate-toilet')?.checked || false
+                        };
+                    }
+
+                    listings.forEach(listing => {
+                        if (listing.removed) return;
+
+                        // Apply same filter logic as list view
+                        let visible = true;
+
+                        // Hide sold listings by default unless explicitly requested
+                        if (listing.sold && !filters.sold) visible = false;
+
+                        // Status filters
+                        if (filters.newThisWeek || filters.priceDrop || filters.openHouse || filters.sold || filters.visited || filters.favorites) {
+                            let statusMatch = false;
+                            if (filters.newThisWeek && (serverNow - listing.timestamp) < weekSeconds) statusMatch = true;
+                            if (filters.priceDrop && listing.price_drop) statusMatch = true;
+                            if (filters.openHouse && listing.open_house && !listing.visited) statusMatch = true;
+                            if (filters.sold && listing.sold) statusMatch = true;
+                            if (filters.visited && listing.visited) statusMatch = true;
+                            if (filters.favorites && listing.favorite) statusMatch = true;
+                            if (!statusMatch) visible = false;
+                        }
+
+                        // Location filters
+                        if (visible && (filters.herttoniemi || filters.herttoniemenranta || filters.kulosaari)) {
+                            const address = (listing.address || '').toLowerCase();
+                            let locationMatch = false;
+                            if (filters.herttoniemi && address.includes('herttoniemi') && !address.includes('herttoniemenranta')) locationMatch = true;
+                            if (filters.herttoniemenranta && address.includes('herttoniemenranta')) locationMatch = true;
+                            if (filters.kulosaari && address.includes('kulosaari')) locationMatch = true;
+                            if (!locationMatch) visible = false;
+                        }
+
+
+
+                        // Separate toilet
+                        if (visible && filters.separateToilet) {
+                            const toilets = listing.toilets || 'N/A';
+                            if (toilets === 'N/A' || toilets === '0' || toilets === '') visible = false;
+                        }
+
+                        if (visible && listing.latitude && listing.longitude) {
+                            let lat = listing.latitude;
+                            let lng = listing.longitude;
+                            const coordKey = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+
+                            if (seenCoords[coordKey]) {
+                                // Apply a small random jitter (approx 10-20 meters)
+                                lat += (Math.random() - 0.5) * 0.0001;
+                                lng += (Math.random() - 0.5) * 0.0001;
+                            }
+                            seenCoords[coordKey] = true;
+
+                            const marker = L.marker([lat, lng]);
+
+                            const popupContent = `
+                        <div class="map-popup">
+                            <h3>${listing.address}</h3>
+                            <p><strong>Price:</strong> ${listing.price}</p>
+                            <p><strong>Size:</strong> ${listing.size}</p>
+                            <a href="${listing.url}" target="_blank">View Details →</a>
+                        </div>
+                    `;
+                            marker.bindPopup(popupContent).addTo(map);
+                            markers.push(marker);
+                        }
+                    });
+
+                    if (markers.length > 0) {
+                        const group = L.featureGroup(markers);
+                        map.fitBounds(group.getBounds(), { padding: [50, 50] });
+                    }
+                }
+            </script>
+</body>
+
+</html>

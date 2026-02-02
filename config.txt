@@ -1,0 +1,1 @@
+https://asunnot.oikotie.fi/myytavat-asunnot?cardType=100&price%5Bmax%5D=600000&roomCount%5B%5D=4&roomCount%5B%5D=5&roomCount%5B%5D=6&roomCount%5B%5D=7&locations=%5B%5B1681,4,%22Herttoniemi,%20Helsinki%22%5D,%5B335107,4,%22Herttoniemenranta,%20Helsinki%22%5D,%5B1680,4,%22Kulosaari,%20Helsinki%22%5D%5D
